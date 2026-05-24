@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>代码依赖图 - Class树 + 调用树</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #333; background: #f5f5f5; }
+    .app { display: flex; height: 100vh; overflow: hidden; }
+
+    /* 左侧面板 - Class树 */
+    .left-panel { width: 380px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; overflow: hidden; }
+    .panel-header { padding: 12px 16px; background: #fafafa; border-bottom: 1px solid #eee; }
+    .panel-header h3 { font-size: 14px; font-weight: 600; color: #333; }
+    .panel-header .count { font-size: 12px; color: #666; font-weight: normal; margin-left: 8px; }
+    .search-box { padding: 12px 16px; border-bottom: 1px solid #eee; }
+    .search-input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+    .search-input:focus { outline: none; border-color: #2196F3; }
+    .class-tree { flex: 1; overflow-y: auto; padding: 8px 0; }
+
+    /* Class节点 */
+    .class-node { user-select: none; }
+    .class-header { display: flex; align-items: center; padding: 8px 16px; cursor: pointer; transition: background 0.15s; }
+    .class-header:hover { background: #f5f5f5; }
+    .class-header.selected { background: #E3F2FD; }
+    .class-toggle { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #666; margin-right: 6px; transition: transform 0.2s; }
+    .class-toggle.expanded { transform: rotate(90deg); }
+    .class-icon { width: 20px; height: 20px; background: #2196F3; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: white; font-size: 10px; font-weight: bold; margin-right: 8px; }
+    .class-name { font-weight: 500; font-size: 13px; color: #333; flex: 1; }
+    .class-count { font-size: 11px; color: #999; }
+
+    /* 成员列表 */
+    .member-list { padding-left: 32px; border-left: 1px solid #e8e8e8; margin-left: 24px; }
+    .member-item { display: flex; align-items: center; padding: 6px 16px; cursor: pointer; transition: background 0.15s; }
+    .member-item:hover { background: #f5f5f5; }
+    .member-item.selected { background: #E8F5E9; }
+    .member-icon { width: 16px; height: 16px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: white; margin-right: 8px; }
+    .member-icon.function { background: #4CAF50; }
+    .member-icon.variable { background: #FF9800; }
+    .member-icon.class { background: #9C27B0; }
+    .member-icon.enum { background: #607D8B; }
+    .member-icon.struct { background: #03A9F4; }
+    .member-icon.typedef { background: #795548; }
+    .member-name { font-size: 12px; color: #555; flex: 1; }
+    .member-sig { font-size: 10px; color: #999; font-family: monospace; }
+
+    /* 右侧面板 - 调用树 */
+    .right-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: white; }
+    .call-tree-header { padding: 12px 16px; background: #fafafa; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; }
+    .call-tree-title { display: flex; align-items: center; gap: 12px; }
+    .call-tree-title h3 { font-size: 14px; font-weight: 600; }
+    .root-symbol { font-family: monospace; font-size: 12px; color: #2196F3; background: #E3F2FD; padding: 2px 8px; border-radius: 3px; }
+    .tree-controls { display: flex; align-items: center; gap: 12px; }
+    .direction-toggle { display: flex; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
+    .direction-toggle button { padding: 6px 12px; border: none; background: white; cursor: pointer; font-size: 12px; }
+    .direction-toggle button:first-child { border-right: 1px solid #ddd; }
+    .direction-toggle button.active { background: #2196F3; color: white; }
+    .depth-select { padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
+    .callback-filter-btn { padding: 4px 10px; border: 1px solid #FF9800; border-radius: 4px; font-size: 12px; background: white; color: #FF9800; cursor: pointer; transition: all 0.2s; }
+    .callback-filter-btn:hover { background: #FFF8E1; }
+    .callback-filter-btn.active { background: #FF9800; color: white; }
+    .callback-filter-info { color: #FF9800; font-weight: 500; }
+
+    .tree-stats { padding: 8px 16px; background: #fafafa; border-bottom: 1px solid #eee; display: flex; gap: 16px; font-size: 12px; color: #666; }
+
+    .tree-content { flex: 1; overflow-y: auto; padding: 16px; }
+
+    /* 调用树节点 */
+    .call-tree-node { font-family: Monaco, Menlo, monospace; font-size: 12px; }
+    .call-node-content { display: flex; align-items: center; gap: 4px; padding: 4px 8px; cursor: pointer; border-radius: 3px; transition: background 0.15s; }
+    .call-node-content:hover { background: #f5f5f5; }
+    .call-connector { color: #ccc; white-space: pre; }
+    .call-toggle { color: #666; font-size: 10px; margin-right: 4px; cursor: pointer; }
+    .call-leaf { color: #ddd; margin-right: 4px; }
+    .call-kind { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 3px; font-size: 10px; color: white; margin-right: 6px; }
+    .call-kind.function { background: #4CAF50; }
+    .call-kind.class { background: #2196F3; }
+    .call-kind.struct { background: #03A9F4; }
+    .call-kind.enum { background: #FF5722; }
+    .call-name { color: #333; }
+    .call-location { color: #999; font-size: 10px; margin-left: 8px; }
+
+    /* 回调节点样式 */
+    .call-node-content.callback { background: linear-gradient(90deg, #FFF8E1 0%, #FFECB3 100%); border-left: 3px solid #FF9800; }
+    .call-node-content.callback:hover { background: linear-gradient(90deg, #FFECB3 0%, #FFE082 100%); }
+    .callback-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 3px; font-size: 9px; color: white; margin-left: 8px; background: #FF9800; }
+    .callback-badge.observer { background: #9C27B0; }
+    .callback-badge.connection { background: #2196F3; }
+    .callback-badge.async { background: #4CAF50; }
+    .callback-badge::before { content: '↩'; font-weight: bold; }
+    .call-children { padding-left: 20px; }
+
+    /* 根节点 */
+    .root-node { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%); border: 1px solid #90CAF9; border-radius: 6px; margin-bottom: 16px; }
+    .root-kind { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; font-size: 12px; color: white; }
+    .root-name { font-weight: 600; font-size: 14px; color: #1565C0; }
+    .root-location { color: #666; font-size: 11px; margin-left: 12px; }
+
+    /* 空状态 */
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #999; text-align: center; padding: 40px; }
+    .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: #666; }
+    .empty-state p { font-size: 13px; }
+    .empty-state .hint { font-size: 12px; color: #999; margin-top: 8px; }
+
+    /* 加载状态 */
+    .loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; color: #666; }
+    .spinner { width: 32px; height: 32px; border: 3px solid #f3f3f3; border-top: 3px solid #2196F3; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* 搜索高亮 */
+    .highlight { background: #FFEB3B; padding: 0 2px; border-radius: 2px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const API_BASE = window.__APP_API_BASE__ || 'http://localhost:8000/api';
+    const KIND_ICONS = { function: 'ƒ', class: 'C', struct: 'S', enum: 'E', variable: 'V', typedef: 'T' };
+    const KIND_COLORS = { function: '#4CAF50', class: '#2196F3', struct: '#03A9F4', enum: '#FF5722', variable: '#FF9800', typedef: '#795548' };
+
+    async function fetchApi(endpoint, options = {}) {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        headers: { 'Content-Type': 'application/json', ...options.headers },
+        ...options,
+      });
+      const result = await response.json();
+      if (!result.success) throw new Error(result.message);
+      return result.data;
+    }
+
+    // 符号搜索API
+    const symbolApi = {
+      searchClasses: (keyword) => fetchApi(`/symbols?kind=class&keyword=${encodeURIComponent(keyword || '')}&page_size=100`),
+      getClassMembers: (classId) => fetchApi(`/symbols/${classId}/members`),
+      getCallTree: (symbolId, direction, maxDepth) =>
+        fetchApi(`/symbols/${symbolId}/call-tree?direction=${direction}&max_depth=${maxDepth}`),
+    };
+
+    // Class树节点
+    function ClassNode({ classData, selectedId, onSelect, expandedNodes, onToggle, level = 0 }) {
+      const [members, setMembers] = React.useState([]);
+      const [loading, setLoading] = React.useState(false);
+      const isExpanded = expandedNodes.has(classData.id);
+      const isSelected = selectedId === classData.id;
+
+      const handleToggle = async (e) => {
+        e.stopPropagation();
+        onToggle(classData.id);
+        if (!isExpanded && members.length === 0) {
+          setLoading(true);
+          try {
+            const data = await symbolApi.getClassMembers(classData.id);
+            setMembers(data.members || []);
+          } catch (err) { console.error(err); }
+          finally { setLoading(false); }
+        }
+      };
+
+      return (
+        <div className="class-node">
+          <div className={`class-header ${isSelected ? 'selected' : ''}`} onClick={() => onSelect(classData)}>
+            <span className={`class-toggle ${isExpanded ? 'expanded' : ''}`} onClick={handleToggle}>
+              {isExpanded ? '▼' : '▶'}
+            </span>
+            <span className="class-icon">C</span>
+            <span className="class-name">{classData.name}</span>
+            {isExpanded && members.length > 0 && <span className="class-count">{members.length} 成员</span>}
+          </div>
+          {isExpanded && (
+            <div className="member-list">
+              {loading ? (
+                <div className="member-item"><span className="loading">加载中...</span></div>
+              ) : (
+                members.map(member => (
+                  <div
+                    key={member.id}
+                    className={`member-item ${selectedId === member.id ? 'selected' : ''}`}
+                    onClick={() => onSelect(member)}
+                  >
+                    <span className={`member-icon ${member.kind}`}>{KIND_ICONS[member.kind] || '?'}</span>
+                    <span className="member-name">{member.name}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 左侧面板 - Class树
+    function ClassTreePanel({ selectedSymbol, onSymbolSelect }) {
+      const [keyword, setKeyword] = React.useState('');
+      const [classes, setClasses] = React.useState([]);
+      const [expandedNodes, setExpandedNodes] = React.useState(new Set());
+      const [loading, setLoading] = React.useState(true);
+
+      React.useEffect(() => {
+        loadClasses();
+      }, []);
+
+      const loadClasses = async () => {
+        setLoading(true);
+        try {
+          const data = await symbolApi.searchClasses('');
+          setClasses(data.symbols || []);
+        } catch (err) { console.error(err); }
+        finally { setLoading(false); }
+      };
+
+      const filteredClasses = keyword
+        ? classes.filter(c => c.name.toLowerCase().includes(keyword.toLowerCase()))
+        : classes;
+
+      const handleToggle = (classId) => {
+        setExpandedNodes(prev => {
+          const next = new Set(prev);
+          next.has(classId) ? next.delete(classId) : next.add(classId);
+          return next;
+        });
+      };
+
+      return (
+        <div className="left-panel">
+          <div className="panel-header">
+            <h3>Class 树<span className="count">({classes.length})</span></h3>
+          </div>
+          <div className="search-box">
+            <input
+              className="search-input"
+              placeholder="搜索 Class..."
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+            />
+          </div>
+          <div className="class-tree">
+            {loading ? (
+              <div className="loading"><div className="spinner" /></div>
+            ) : (
+              filteredClasses.slice(0, 200).map(cls => (
+                <ClassNode
+                  key={cls.id}
+                  classData={cls}
+                  selectedId={selectedSymbol?.id}
+                  onSelect={onSymbolSelect}
+                  expandedNodes={expandedNodes}
+                  onToggle={handleToggle}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // 调用树节点
+    function CallTreeNode({ node, isLast, prefix, onToggle, expandedNodes }) {
+      const hasChildren = node.children && node.children.length > 0;
+      const isExpanded = expandedNodes.has(node.symbol.id);
+      const connector = isLast ? '└── ' : '├── ';
+      const childPrefix = prefix + (isLast ? '    ' : '│   ');
+      const isCallback = node.is_callback;
+      const callbackType = node.callback_type || 'callback';
+
+      return (
+        <div className="call-tree-node">
+          <div className={`call-node-content ${isCallback ? 'callback' : ''}`}>
+            <span className="call-connector">{prefix}{connector}</span>
+            {hasChildren && <span className="call-toggle" onClick={() => onToggle(node.symbol.id)}>{isExpanded ? '▼' : '▶'}</span>}
+            {!hasChildren && <span className="call-leaf">•</span>}
+            <span className={`call-kind ${node.symbol.kind}`}>{KIND_ICONS[node.symbol.kind] || '?'}</span>
+            <span className="call-name">{node.symbol.name}</span>
+            {isCallback && <span className={`callback-badge ${callbackType}`}>{callbackType}</span>}
+            {node.depth > 0 && <span className="call-location">{node.symbol.dep_file?.split('/').pop()}:{node.symbol.line}</span>}
+          </div>
+          {hasChildren && isExpanded && (
+            <div className="call-children">
+              {node.children.map((child, idx) => (
+                <CallTreeNode
+                  key={child.symbol.id}
+                  node={child}
+                  isLast={idx === node.children.length - 1}
+                  prefix={childPrefix}
+                  onToggle={onToggle}
+                  expandedNodes={expandedNodes}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 右侧面板 - 调用树
+    function CallTreePanel({ symbol }) {
+      const [callTree, setCallTree] = React.useState(null);
+      const [direction, setDirection] = React.useState('outgoing');
+      const [maxDepth, setMaxDepth] = React.useState(3);
+      const [loading, setLoading] = React.useState(false);
+      const [expandedNodes, setExpandedNodes] = React.useState(new Set());
+      const [statistics, setStatistics] = React.useState(null);
+      const [showOnlyCallbacks, setShowOnlyCallbacks] = React.useState(false);
+
+      React.useEffect(() => {
+        if (symbol) loadCallTree();
+      }, [symbol, direction, maxDepth, showOnlyCallbacks]);
+
+      const loadCallTree = async () => {
+        setLoading(true);
+        try {
+          const data = await symbolApi.getCallTree(symbol.id, direction, maxDepth);
+          setCallTree(data.tree);
+          setStatistics(data.statistics);
+          // 自动展开第一层
+          const firstLevel = new Set();
+          if (data.tree?.children) {
+            data.tree.children.forEach(c => firstLevel.add(c.symbol.id));
+          }
+          setExpandedNodes(firstLevel);
+        } catch (err) { console.error(err); }
+        finally { setLoading(false); }
+      };
+
+      const handleToggle = (nodeId) => {
+        setExpandedNodes(prev => {
+          const next = new Set(prev);
+          next.has(nodeId) ? next.delete(nodeId) : next.add(nodeId);
+          return next;
+        });
+      };
+
+      const filterCallbacks = (node) => {
+        if (!showOnlyCallbacks) return true;
+        return node.is_callback || (node.children && node.children.some(c => filterCallbacks(c)));
+      };
+
+      const filteredChildren = callTree?.children?.filter(filterCallbacks) || [];
+
+      if (!symbol) {
+        return (
+          <div className="right-panel">
+            <div className="empty-state">
+              <h3>选择符号查看调用树</h3>
+              <p>在左侧面板选择 Class 或成员</p>
+              <p className="hint">点击成员后，右侧将实时显示其调用关系</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="right-panel">
+          <div className="call-tree-header">
+            <div className="call-tree-title">
+              <h3>{direction === 'outgoing' ? '📤 调用谁' : '📥 被谁调用'}</h3>
+              <span className="root-symbol">{symbol.name}</span>
+            </div>
+            <div className="tree-controls">
+              <div className="direction-toggle">
+                <button className={direction === 'outgoing' ? 'active' : ''} onClick={() => setDirection('outgoing')}>调用谁</button>
+                <button className={direction === 'incoming' ? 'active' : ''} onClick={() => setDirection('incoming')}>被谁调用</button>
+              </div>
+              <select className="depth-select" value={maxDepth} onChange={(e) => setMaxDepth(Number(e.target.value))}>
+                <option value={1}>深度 1</option>
+                <option value={2}>深度 2</option>
+                <option value={3}>深度 3</option>
+                <option value={4}>深度 4</option>
+                <option value={5}>深度 5</option>
+              </select>
+              <button
+                className={`callback-filter-btn ${showOnlyCallbacks ? 'active' : ''}`}
+                onClick={() => setShowOnlyCallbacks(!showOnlyCallbacks)}
+                title="只显示回调链路"
+              >
+                ↩ 回调
+              </button>
+            </div>
+          </div>
+
+          {statistics && (
+            <div className="tree-stats">
+              <span>节点: {statistics.total_nodes}</span>
+              <span>最大深度: {statistics.max_depth}</span>
+              {showOnlyCallbacks && <span className="callback-filter-info">已过滤：只显示回调</span>}
+            </div>
+          )}
+
+          <div className="tree-content">
+            {loading ? (
+              <div className="loading"><div className="spinner" /><span>加载中...</span></div>
+            ) : callTree ? (
+              <>
+                <div className="root-node">
+                  <span className={`root-kind ${symbol.kind}`} style={{ background: KIND_COLORS[symbol.kind] }}>{KIND_ICONS[symbol.kind] || '?'}</span>
+                  <span className="root-name">{symbol.name}</span>
+                  <span className="root-location">{symbol.file_path?.split('/').pop()}:{symbol.line_number || symbol.line}</span>
+                </div>
+                {filteredChildren.length === 0 ? (
+                  <div className="empty-state">
+                    <p>{showOnlyCallbacks ? '没有找到回调链路' : '没有找到' + (direction === 'outgoing' ? '调用的函数' : '调用该函数的函数')}</p>
+                    <p className="hint">{showOnlyCallbacks ? '该函数没有回调注册' : '可能只调用了外部库函数'}</p>
+                  </div>
+                ) : (
+                  filteredChildren.map((child, idx) => (
+                    <CallTreeNode
+                      key={child.symbol.id}
+                      node={child}
+                      isLast={idx === filteredChildren.length - 1}
+                      prefix=""
+                      onToggle={handleToggle}
+                      expandedNodes={expandedNodes}
+                    />
+                  ))
+                )}
+              </>
+            ) : (
+              <div className="empty-state">
+                <p>暂无调用关系数据</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // 主应用
+    function App() {
+      const [selectedSymbol, setSelectedSymbol] = React.useState(null);
+
+      const handleSymbolSelect = (sym) => {
+        setSelectedSymbol(sym);
+      };
+
+      return (
+        <div className="app">
+          <ClassTreePanel
+            selectedSymbol={selectedSymbol}
+            onSymbolSelect={handleSymbolSelect}
+          />
+          <CallTreePanel symbol={selectedSymbol} />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

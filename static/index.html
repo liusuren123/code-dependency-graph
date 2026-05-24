@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>代码依赖图 - Class树 + 调用树</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #333; background: #f5f5f5; }
+    .app { display: flex; height: 100vh; overflow: hidden; }
+
+    /* 左侧面板 - Class树 */
+    .left-panel { width: 380px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; overflow: hidden; }
+    .panel-header { padding: 12px 16px; background: #fafafa; border-bottom: 1px solid #eee; }
+    .panel-header h3 { font-size: 14px; font-weight: 600; color: #333; }
+    .panel-header .count { font-size: 12px; color: #666; font-weight: normal; margin-left: 8px; }
+    .search-box { padding: 12px 16px; border-bottom: 1px solid #eee; }
+    .search-input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+    .search-input:focus { outline: none; border-color: #2196F3; }
+    .class-tree { flex: 1; overflow-y: auto; padding: 8px 0; }
+
+    /* Class节点 */
+    .class-node { user-select: none; }
+    .class-header { display: flex; align-items: center; padding: 8px 16px; cursor: pointer; transition: background 0.15s; }
+    .class-header:hover { background: #f5f5f5; }
+    .class-header.selected { background: #E3F2FD; }
+    .class-toggle { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #666; margin-right: 6px; transition: transform 0.2s; }
+    .class-toggle.expanded { transform: rotate(90deg); }
+    .class-icon { width: 20px; height: 20px; background: #2196F3; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: white; font-size: 10px; font-weight: bold; margin-right: 8px; }
+    .class-name { font-weight: 500; font-size: 13px; color: #333; flex: 1; }
+    .class-count { font-size: 11px; color: #999; }
+
+    /* 成员列表 */
+    .member-list { padding-left: 32px; border-left: 1px solid #e8e8e8; margin-left: 24px; }
+    .member-item { display: flex; align-items: center; padding: 6px 16px; cursor: pointer; transition: background 0.15s; }
+    .member-item:hover { background: #f5f5f5; }
+    .member-item.selected { background: #E8F5E9; }
+    .member-icon { width: 16px; height: 16px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: white; margin-right: 8px; }
+    .member-icon.function { background: #4CAF50; }
+    .member-icon.variable { background: #FF9800; }
+    .member-icon.class { background: #9C27B0; }
+    .member-icon.enum { background: #607D8B; }
+    .member-icon.struct { background: #03A9F4; }
+    .member-icon.typedef { background: #795548; }
+    .member-name { font-size: 12px; color: #555; flex: 1; }
+    .member-sig { font-size: 10px; color: #999; font-family: monospace; }
+
+    /* 右侧面板 - 调用树 */
+    .right-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: white; }
+    .call-tree-header { padding: 12px 16px; background: #fafafa; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; }
+    .call-tree-title { display: flex; align-items: center; gap: 12px; }
+    .call-tree-title h3 { font-size: 14px; font-weight: 600; }
+    .root-symbol { font-family: monospace; font-size: 12px; color: #2196F3; background: #E3F2FD; padding: 2px 8px; border-radius: 3px; }
+    .tree-controls { display: flex; align-items: center; gap: 12px; }
+    .direction-toggle { display: flex; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
+    .direction-toggle button { padding: 6px 12px; border: none; background: white; cursor: pointer; font-size: 12px; }
+    .direction-toggle button:first-child { border-right: 1px solid #ddd; }
+    .direction-toggle button.active { background: #2196F3; color: white; }
+    .depth-select { padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
+    .callback-filter-btn { padding: 4px 10px; border: 1px solid #FF9800; border-radius: 4px; font-size: 12px; background: white; color: #FF9800; cursor: pointer; transition: all 0.2s; }
+    .callback-filter-btn:hover { background: #FFF8E1; }
+    .callback-filter-btn.active { background: #FF9800; color: white; }
+    .callback-filter-info { color: #FF9800; font-weight: 500; }
+
+    .tree-stats { padding: 8px 16px; background: #fafafa; border-bottom: 1px solid #eee; display: flex; gap: 16px; font-size: 12px; color: #666; }
+
+    .tree-content { flex: 1; overflow-y: auto; padding: 16px; }
+
+    /* 调用树节点 */
+    .call-tree-node { font-family: Monaco, Menlo, monospace; font-size: 12px; }
+    .call-node-content { display: flex; align-items: center; gap: 4px; padding: 4px 8px; cursor: pointer; border-radius: 3px; transition: background 0.15s; }
+    .call-node-content:hover { background: #f5f5f5; }
+    .call-connector { color: #ccc; white-space: pre; }
+    .call-toggle { color: #666; font-size: 10px; margin-right: 4px; cursor: pointer; }
+    .call-leaf { color: #ddd; margin-right: 4px; }
+    .call-kind { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 3px; font-size: 10px; color: white; margin-right: 6px; }
+    .call-kind.function { background: #4CAF50; }
+    .call-kind.class { background: #2196F3; }
+    .call-kind.struct { background: #03A9F4; }
+    .call-kind.enum { background: #FF5722; }
+    .call-name { color: #333; }
+    .call-location { color: #999; font-size: 10px; margin-left: 8px; }
+
+    /* 回调节点样式 */
+    .call-node-content.callback { background: linear-gradient(90deg, #FFF8E1 0%, #FFECB3 100%); border-left: 3px solid #FF9800; }
+    .call-node-content.callback:hover { background: linear-gradient(90deg, #FFECB3 0%, #FFE082 100%); }
+    .callback-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 3px; font-size: 9px; color: white; margin-left: 8px; background: #FF9800; }
+    .callback-badge.observer { background: #9C27B0; }
+    .callback-badge.connection { background: #2196F3; }
+    .callback-badge.async { background: #4CAF50; }
+    .callback-badge::before { content: '↩'; font-weight: bold; }
+    .call-children { padding-left: 20px; }
+
+    /* 根节点 */
+    .root-node { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%); border: 1px solid #90CAF9; border-radius: 6px; margin-bottom: 16px; }
+    .root-kind { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 4px; font-size: 12px; color: white; }
+    .root-name { font-weight: 600; font-size: 14px; color: #1565C0; }
+    .root-location { color: #666; font-size: 11px; margin-left: 12px; }
+
+    /* 空状态 */
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #999; text-align: center; padding: 40px; }
+    .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: #666; }
+    .empty-state p { font-size: 13px; }
+    .empty-state .hint { font-size: 12px; color: #999; margin-top: 8px; }
+
+    /* 加载状态 */
+    .loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; color: #666; }
+    .spinner { width: 32px; height: 32px; border: 3px solid #f3f3f3; border-top: 3px solid #2196F3; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* 搜索高亮 */
+    .highlight { background: #FFEB3B; padding: 0 2px; border-radius: 2px; }
+
+    /* 仓库管理面板 */
+    .repo-manager { position: fixed; top: 12px; right: 12px; z-index: 1000; }
+
+    /* 左侧面板标签页 */
+    .panel-tabs { display: flex; border-bottom: 1px solid #eee; background: #fafafa; }
+    .tab-btn { flex: 1; padding: 10px 12px; border: none; background: none; cursor: pointer; font-size: 13px; color: #666; border-bottom: 2px solid transparent; transition: all 0.2s; }
+    .tab-btn:hover { color: #333; background: #f0f0f0; }
+    .tab-btn.active { color: #2196F3; border-bottom-color: #2196F3; font-weight: 600; }
+
+    /* 符号类型过滤 */
+    .symbol-kind-filter { padding: 8px 12px; border-bottom: 1px solid #eee; }
+    .symbol-kind-filter select { width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; }
+
+    /* 符号列表 */
+    .symbol-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+    .symbol-item { display: flex; align-items: center; gap: 8px; padding: 8px 16px; cursor: pointer; transition: background 0.15s; }
+    .symbol-item:hover { background: #f5f5f5; }
+    .symbol-item.selected { background: #E3F2FD; }
+    .symbol-name { flex: 1; font-size: 13px; color: #333; font-family: monospace; }
+    .symbol-kind { font-size: 10px; color: #999; background: #eee; padding: 2px 6px; border-radius: 3px; }
+    .repo-toggle-btn { padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+    .repo-toggle-btn:hover { background: #1976D2; }
+    .repo-panel { position: absolute; top: 100%; right: 0; width: 400px; max-height: 500px; background: white; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); margin-top: 8px; overflow: hidden; display: flex; flex-direction: column; }
+    .repo-panel.hidden { display: none; }
+    .repo-panel-header { padding: 16px; background: #fafafa; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .repo-panel-header h3 { font-size: 14px; font-weight: 600; }
+    .repo-close-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #999; }
+    .repo-close-btn:hover { color: #333; }
+    .repo-list { flex: 1; overflow-y: auto; padding: 12px; }
+    .repo-item { padding: 12px; background: #fafafa; border-radius: 6px; margin-bottom: 8px; cursor: pointer; border: 2px solid transparent; transition: all 0.2s; }
+    .repo-item:hover { border-color: #2196F3; }
+    .repo-item.selected { border-color: #2196F3; background: #E3F2FD; }
+    .repo-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .repo-item-name { font-weight: 600; font-size: 14px; }
+    .repo-item-layer { font-size: 11px; padding: 2px 8px; background: #4CAF50; color: white; border-radius: 10px; }
+    .repo-item-meta { font-size: 11px; color: #999; margin-bottom: 8px; }
+    .repo-item-actions { display: flex; gap: 8px; }
+    .repo-action-btn { padding: 4px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .repo-action-btn:hover { background: #f5f5f5; }
+    .repo-action-btn.danger { border-color: #f44336; color: #f44336; }
+    .repo-form { padding: 16px; border-top: 1px solid #eee; background: #fafafa; }
+    .repo-form h4 { font-size: 13px; margin-bottom: 12px; }
+    .form-row { margin-bottom: 12px; }
+    .form-row label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+    .form-row input, .form-row select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+    .form-row input:focus, .form-row select:focus { outline: none; border-color: #2196F3; }
+    .form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .btn-primary { padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .btn-primary:hover { background: #1976D2; }
+    .btn-secondary { padding: 8px 16px; background: white; color: #666; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .empty-repo { text-align: center; padding: 24px; color: #999; }
+    .empty-repo p { margin-bottom: 12px; }
+    .parse-status { font-size: 11px; color: #666; margin-top: 8px; }
+    .parse-status.parsing { color: #FF9800; }
+    .parse-status.done { color: #4CAF50; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const API_BASE = window.__APP_API_BASE__ || '/api';
+    const KIND_ICONS = { function: 'ƒ', class: 'C', struct: 'S', enum: 'E', variable: 'V', typedef: 'T' };
+    const KIND_COLORS = { function: '#4CAF50', class: '#2196F3', struct: '#03A9F4', enum: '#FF5722', variable: '#FF9800', typedef: '#795548' };
+
+    async function fetchApi(endpoint, options = {}) {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        headers: { 'Content-Type': 'application/json', ...options.headers },
+        ...options,
+      });
+      const result = await response.json();
+      if (!result.success) throw new Error(result.message);
+      return result.data;
+    }
+
+    // 符号搜索API
+    const symbolApi = {
+      searchClasses: (keyword, repositoryId) => {
+        const params = new URLSearchParams({ kind: 'class', page_size: '100' });
+        if (keyword) params.append('keyword', keyword);
+        if (repositoryId) params.append('repository_id', String(repositoryId));
+        return fetchApi(`/symbols?${params.toString()}`);
+      },
+      search: (keyword, kind, repositoryId) => {
+        const params = new URLSearchParams({ page_size: '100' });
+        if (keyword) params.append('keyword', keyword);
+        if (kind && kind !== 'all') params.append('kind', kind);
+        if (repositoryId) params.append('repository_id', String(repositoryId));
+        return fetchApi(`/symbols?${params.toString()}`);
+      },
+      getClassMembers: (classId) => fetchApi(`/symbols/${classId}/members`),
+      getCallTree: (symbolId, direction, maxDepth) =>
+        fetchApi(`/symbols/${symbolId}/call-tree?direction=${direction}&max_depth=${maxDepth}`),
+    };
+
+    // 仓库API
+    const repoApi = {
+      list: () => fetchApi('/repositories'),
+      get: (id) => fetchApi(`/repositories/${id}`),
+      create: (data) => fetchApi('/repositories', { method: 'POST', body: JSON.stringify(data) }),
+      delete: (id) => fetchApi(`/repositories/${id}`, { method: 'DELETE' }),
+      parse: (id) => fetchApi(`/repositories/${id}/parse`, { method: 'POST' }),
+      getGitInfo: (path) => fetchApi(`/repositories/git-info?path=${encodeURIComponent(path)}`),
+    };
+
+    // Git 信息获取
+    const fetchGitInfo = async (path) => {
+      try {
+        const data = await repoApi.getGitInfo(path);
+        return data || null;
+      } catch (err) {
+        console.error('获取 Git 信息失败:', err);
+        return null;
+      }
+    };
+
+    // Class树节点
+    function ClassNode({ classData, selectedId, onSelect, expandedNodes, onToggle, level = 0 }) {
+      const [members, setMembers] = React.useState([]);
+      const [loading, setLoading] = React.useState(false);
+      const isExpanded = expandedNodes.has(classData.id);
+      const isSelected = selectedId === classData.id;
+
+      const handleToggle = async (e) => {
+        e.stopPropagation();
+        onToggle(classData.id);
+        if (!isExpanded && members.length === 0) {
+          setLoading(true);
+          try {
+            const data = await symbolApi.getClassMembers(classData.id);
+            setMembers(data.members || []);
+          } catch (err) { console.error(err); }
+          finally { setLoading(false); }
+        }
+      };
+
+      return (
+        <div className="class-node">
+          <div className={`class-header ${isSelected ? 'selected' : ''}`} onClick={() => onSelect(classData)}>
+            <span className={`class-toggle ${isExpanded ? 'expanded' : ''}`} onClick={handleToggle}>
+              {isExpanded ? '▼' : '▶'}
+            </span>
+            <span className="class-icon">C</span>
+            <span className="class-name">{classData.name}</span>
+            {isExpanded && members.length > 0 && <span className="class-count">{members.length} 成员</span>}
+          </div>
+          {isExpanded && (
+            <div className="member-list">
+              {loading ? (
+                <div className="member-item"><span className="loading">加载中...</span></div>
+              ) : (
+                members.map(member => (
+                  <div
+                    key={member.id}
+                    className={`member-item ${selectedId === member.id ? 'selected' : ''}`}
+                    onClick={() => onSelect(member)}
+                  >
+                    <span className={`member-icon ${member.kind}`}>{KIND_ICONS[member.kind] || '?'}</span>
+                    <span className="member-name">{member.name}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 左侧面板 - Class树
+    function ClassTreePanel({ selectedSymbol, onSymbolSelect, repositoryId }) {
+      const [activeTab, setActiveTab] = React.useState('class'); // 'class' | 'symbol'
+      const [keyword, setKeyword] = React.useState('');
+      const [classes, setClasses] = React.useState([]);
+      const [symbols, setSymbols] = React.useState([]);
+      const [expandedNodes, setExpandedNodes] = React.useState(new Set());
+      const [loading, setLoading] = React.useState(true);
+      const [symbolKind, setSymbolKind] = React.useState('all'); // 符号类型过滤
+
+      React.useEffect(() => {
+        loadClasses();
+        loadSymbols();
+      }, [repositoryId]);
+
+      const loadClasses = async () => {
+        setLoading(true);
+        try {
+          const data = await symbolApi.searchClasses('', repositoryId);
+          setClasses(data.symbols || []);
+        } catch (err) { console.error(err); }
+        finally { setLoading(false); }
+      };
+
+      const loadSymbols = async () => {
+        setLoading(true);
+        try {
+          const data = await symbolApi.search(keyword, symbolKind, repositoryId);
+          setSymbols(data.symbols || []);
+        } catch (err) { console.error(err); }
+        finally { setLoading(false); }
+      };
+
+      React.useEffect(() => {
+        if (activeTab === 'symbol') {
+          loadSymbols();
+        }
+      }, [keyword, symbolKind, activeTab]);
+
+      const filteredClasses = keyword
+        ? classes.filter(c => c.name.toLowerCase().includes(keyword.toLowerCase()))
+        : classes;
+
+      const handleToggle = (classId) => {
+        setExpandedNodes(prev => {
+          const next = new Set(prev);
+          next.has(classId) ? next.delete(classId) : next.add(classId);
+          return next;
+        });
+      };
+
+      return (
+        <div className="left-panel">
+          {/* 标签页切换 */}
+          <div className="panel-tabs">
+            <button
+              className={`tab-btn ${activeTab === 'class' ? 'active' : ''}`}
+              onClick={() => setActiveTab('class')}
+            >
+              📂 Class树
+            </button>
+            <button
+              className={`tab-btn ${activeTab === 'symbol' ? 'active' : ''}`}
+              onClick={() => setActiveTab('symbol')}
+            >
+              🔍 符号搜索
+            </button>
+          </div>
+
+          {/* 搜索框 */}
+          <div className="search-box">
+            <input
+              className="search-input"
+              placeholder={activeTab === 'class' ? '搜索 Class...' : '搜索符号（函数、变量等）...'}
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+            />
+          </div>
+
+          {/* 符号类型过滤（仅符号搜索标签页显示） */}
+          {activeTab === 'symbol' && (
+            <div className="symbol-kind-filter">
+              <select value={symbolKind} onChange={(e) => setSymbolKind(e.target.value)}>
+                <option value="all">全部类型</option>
+                <option value="class">类 (class)</option>
+                <option value="struct">结构体 (struct)</option>
+                <option value="function">函数 (function)</option>
+                <option value="method">方法 (method)</option>
+                <option value="variable">变量 (variable)</option>
+                <option value="enum">枚举 (enum)</option>
+                <option value="typedef">类型定义 (typedef)</option>
+              </select>
+            </div>
+          )}
+
+          {/* Class树内容 */}
+          {activeTab === 'class' && (
+            <div className="class-tree">
+              {loading ? (
+                <div className="loading"><div className="spinner" /></div>
+              ) : filteredClasses.length === 0 ? (
+                <div className="empty-state">
+                  <p>暂无类数据</p>
+                  <p className="hint">请先选择一个仓库并解析代码</p>
+                </div>
+              ) : (
+                filteredClasses.slice(0, 200).map(cls => (
+                  <ClassNode
+                    key={cls.id}
+                    classData={cls}
+                    selectedId={selectedSymbol?.id}
+                    onSelect={onSymbolSelect}
+                    expandedNodes={expandedNodes}
+                    onToggle={handleToggle}
+                  />
+                ))
+              )}
+            </div>
+          )}
+
+          {/* 符号搜索内容 */}
+          {activeTab === 'symbol' && (
+            <div className="symbol-list">
+              {loading ? (
+                <div className="loading"><div className="spinner" /></div>
+              ) : symbols.length === 0 ? (
+                <div className="empty-state">
+                  <p>未找到匹配的符号</p>
+                  <p className="hint">尝试调整搜索关键词或类型筛选</p>
+                </div>
+              ) : (
+                symbols.map(sym => (
+                  <div
+                    key={sym.id}
+                    className={`symbol-item ${selectedSymbol?.id === sym.id ? 'selected' : ''}`}
+                    onClick={() => onSymbolSelect(sym)}
+                  >
+                    <span className={`member-icon ${sym.kind}`} style={{ background: KIND_COLORS[sym.kind] || '#999' }}>
+                      {KIND_ICONS[sym.kind] || '?'}
+                    </span>
+                    <span className="symbol-name">{sym.name}</span>
+                    <span className="symbol-kind">{sym.kind}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 调用树节点
+    function CallTreeNode({ node, isLast, prefix, onToggle, expandedNodes }) {
+      const hasChildren = node.children && node.children.length > 0;
+      const isExpanded = expandedNodes.has(node.symbol.id);
+      const connector = isLast ? '└── ' : '├── ';
+      const childPrefix = prefix + (isLast ? '    ' : '│   ');
+      const isCallback = node.is_callback;
+      const callbackType = node.callback_type || 'callback';
+
+      return (
+        <div className="call-tree-node">
+          <div className={`call-node-content ${isCallback ? 'callback' : ''}`}>
+            <span className="call-connector">{prefix}{connector}</span>
+            {hasChildren && <span className="call-toggle" onClick={() => onToggle(node.symbol.id)}>{isExpanded ? '▼' : '▶'}</span>}
+            {!hasChildren && <span className="call-leaf">•</span>}
+            <span className={`call-kind ${node.symbol.kind}`}>{KIND_ICONS[node.symbol.kind] || '?'}</span>
+            <span className="call-name">{node.symbol.name}</span>
+            {isCallback && <span className={`callback-badge ${callbackType}`}>{callbackType}</span>}
+            {node.depth > 0 && <span className="call-location">{node.symbol.dep_file?.split('/').pop()}:{node.symbol.line}</span>}
+          </div>
+          {hasChildren && isExpanded && (
+            <div className="call-children">
+              {node.children.map((child, idx) => (
+                <CallTreeNode
+                  key={child.symbol.id}
+                  node={child}
+                  isLast={idx === node.children.length - 1}
+                  prefix={childPrefix}
+                  onToggle={onToggle}
+                  expandedNodes={expandedNodes}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 右侧面板 - 调用树
+    function CallTreePanel({ symbol }) {
+      const [callTree, setCallTree] = React.useState(null);
+      const [direction, setDirection] = React.useState('outgoing');
+      const [maxDepth, setMaxDepth] = React.useState(3);
+      const [loading, setLoading] = React.useState(false);
+      const [expandedNodes, setExpandedNodes] = React.useState(new Set());
+      const [statistics, setStatistics] = React.useState(null);
+      const [showOnlyCallbacks, setShowOnlyCallbacks] = React.useState(false);
+
+      React.useEffect(() => {
+        if (symbol) loadCallTree();
+      }, [symbol, direction, maxDepth, showOnlyCallbacks]);
+
+      const loadCallTree = async () => {
+        setLoading(true);
+        try {
+          const data = await symbolApi.getCallTree(symbol.id, direction, maxDepth);
+          setCallTree(data.tree);
+          setStatistics(data.statistics);
+          // 自动展开第一层
+          const firstLevel = new Set();
+          if (data.tree?.children) {
+            data.tree.children.forEach(c => firstLevel.add(c.symbol.id));
+          }
+          setExpandedNodes(firstLevel);
+        } catch (err) { console.error(err); }
+        finally { setLoading(false); }
+      };
+
+      const handleToggle = (nodeId) => {
+        setExpandedNodes(prev => {
+          const next = new Set(prev);
+          next.has(nodeId) ? next.delete(nodeId) : next.add(nodeId);
+          return next;
+        });
+      };
+
+      const filterCallbacks = (node) => {
+        if (!showOnlyCallbacks) return true;
+        return node.is_callback || (node.children && node.children.some(c => filterCallbacks(c)));
+      };
+
+      const filteredChildren = callTree?.children?.filter(filterCallbacks) || [];
+
+      if (!symbol) {
+        return (
+          <div className="right-panel">
+            <div className="empty-state">
+              <h3>选择符号查看调用树</h3>
+              <p>在左侧面板选择 Class 或成员</p>
+              <p className="hint">点击成员后，右侧将实时显示其调用关系</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="right-panel">
+          <div className="call-tree-header">
+            <div className="call-tree-title">
+              <h3>{direction === 'outgoing' ? '📤 调用谁' : '📥 被谁调用'}</h3>
+              <span className="root-symbol">{symbol.name}</span>
+            </div>
+            <div className="tree-controls">
+              <div className="direction-toggle">
+                <button className={direction === 'outgoing' ? 'active' : ''} onClick={() => setDirection('outgoing')}>调用谁</button>
+                <button className={direction === 'incoming' ? 'active' : ''} onClick={() => setDirection('incoming')}>被谁调用</button>
+              </div>
+              <select className="depth-select" value={maxDepth} onChange={(e) => setMaxDepth(Number(e.target.value))}>
+                <option value={1}>深度 1</option>
+                <option value={2}>深度 2</option>
+                <option value={3}>深度 3</option>
+                <option value={4}>深度 4</option>
+                <option value={5}>深度 5</option>
+              </select>
+              <button
+                className={`callback-filter-btn ${showOnlyCallbacks ? 'active' : ''}`}
+                onClick={() => setShowOnlyCallbacks(!showOnlyCallbacks)}
+                title="只显示回调链路"
+              >
+                ↩ 回调
+              </button>
+            </div>
+          </div>
+
+          {statistics && (
+            <div className="tree-stats">
+              <span>节点: {statistics.total_nodes}</span>
+              <span>最大深度: {statistics.max_depth}</span>
+              {showOnlyCallbacks && <span className="callback-filter-info">已过滤：只显示回调</span>}
+            </div>
+          )}
+
+          <div className="tree-content">
+            {loading ? (
+              <div className="loading"><div className="spinner" /><span>加载中...</span></div>
+            ) : callTree ? (
+              <>
+                <div className="root-node">
+                  <span className={`root-kind ${symbol.kind}`} style={{ background: KIND_COLORS[symbol.kind] }}>{KIND_ICONS[symbol.kind] || '?'}</span>
+                  <span className="root-name">{symbol.name}</span>
+                  <span className="root-location">{symbol.file_path?.split('/').pop()}:{symbol.line_number || symbol.line}</span>
+                </div>
+                {filteredChildren.length === 0 ? (
+                  <div className="empty-state">
+                    <p>{showOnlyCallbacks ? '没有找到回调链路' : '没有找到' + (direction === 'outgoing' ? '调用的函数' : '调用该函数的函数')}</p>
+                    <p className="hint">{showOnlyCallbacks ? '该函数没有回调注册' : '可能只调用了外部库函数'}</p>
+                  </div>
+                ) : (
+                  filteredChildren.map((child, idx) => (
+                    <CallTreeNode
+                      key={child.symbol.id}
+                      node={child}
+                      isLast={idx === filteredChildren.length - 1}
+                      prefix=""
+                      onToggle={handleToggle}
+                      expandedNodes={expandedNodes}
+                    />
+                  ))
+                )}
+              </>
+            ) : (
+              <div className="empty-state">
+                <p>暂无调用关系数据</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // 主应用
+    function App() {
+      const [selectedSymbol, setSelectedSymbol] = React.useState(null);
+      const [selectedRepo, setSelectedRepo] = React.useState(null);
+      const [repositories, setRepositories] = React.useState([]);
+      const [showRepoPanel, setShowRepoPanel] = React.useState(false);
+      const [showAddForm, setShowAddForm] = React.useState(false);
+      const [parsingId, setParsingId] = React.useState(null);
+      const [loadingGitInfo, setLoadingGitInfo] = React.useState(false);
+      const [availableBranches, setAvailableBranches] = React.useState([]);
+      // 新增仓库表单
+      const [newRepo, setNewRepo] = React.useState({ name: '', path: '', layer: 'SDK', branch: 'main', remote_url: '' });
+
+      React.useEffect(() => {
+        loadRepositories();
+      }, []);
+
+      React.useEffect(() => {
+        // 路径变化时自动获取 Git 信息
+        if (!newRepo.path || !showAddForm) return;
+
+        const timer = setTimeout(async () => {
+          setLoadingGitInfo(true);
+          try {
+            const gitInfo = await fetchGitInfo(newRepo.path);
+            if (gitInfo && (gitInfo.success || gitInfo.current_branch)) {
+              setAvailableBranches(gitInfo.all_branches || [gitInfo.current_branch]);
+              setNewRepo(prev => ({
+                ...prev,
+                branch: gitInfo.current_branch || prev.branch,
+                remote_url: gitInfo.remote_url || prev.remote_url
+              }));
+            }
+          } catch (err) {
+            console.error('自动获取 Git 信息失败:', err);
+          } finally {
+            setLoadingGitInfo(false);
+          }
+        }, 500);
+
+        return () => clearTimeout(timer);
+      }, [newRepo.path, showAddForm]);
+
+      const loadRepositories = async () => {
+        try {
+          const data = await repoApi.list();
+          setRepositories(data.repositories || []);
+        } catch (err) { console.error(err); }
+      };
+
+      const handleSymbolSelect = (sym) => {
+        setSelectedSymbol(sym);
+      };
+
+      const handleSelectRepo = async (repo) => {
+        setSelectedRepo(repo);
+        // 如果仓库还未解析，先解析
+        if (!repo.parsed) {
+          handleParseRepo(repo);
+        }
+      };
+
+      const handleParseRepo = async (repo) => {
+        setParsingId(repo.id);
+        try {
+          await repoApi.parse(repo.id);
+          // 重新加载仓库列表
+          loadRepositories();
+        } catch (err) { console.error(err); }
+        finally { setParsingId(null); }
+      };
+
+      const handleAddRepo = async () => {
+        if (!newRepo.name || !newRepo.path) return;
+        try {
+          await repoApi.create(newRepo);
+          loadRepositories();
+          setShowAddForm(false);
+          setNewRepo({ name: '', path: '', layer: 'SDK', branch: 'main', remote_url: '' });
+        } catch (err) { console.error(err); }
+      };
+
+      const handleDeleteRepo = async (repoId) => {
+        if (!confirm('确定要删除这个仓库吗？')) return;
+        try {
+          await repoApi.delete(repoId);
+          if (selectedRepo?.id === repoId) setSelectedRepo(null);
+          loadRepositories();
+        } catch (err) { console.error(err); }
+      };
+
+      return (
+        <div className="app">
+          {/* 仓库管理按钮 */}
+          <div className="repo-manager">
+            <button className="repo-toggle-btn" onClick={() => setShowRepoPanel(!showRepoPanel)}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 10.5v-8z"/>
+              </svg>
+              {selectedRepo ? selectedRepo.name : '选择仓库'}
+              <span style={{ fontSize: 10 }}>▼</span>
+            </button>
+
+            <div className={`repo-panel ${showRepoPanel ? '' : 'hidden'}`}>
+              <div className="repo-panel-header">
+                <h3>仓库管理</h3>
+                <button className="repo-close-btn" onClick={() => setShowRepoPanel(false)}>×</button>
+              </div>
+
+              <div className="repo-list">
+                {repositories.length === 0 ? (
+                  <div className="empty-repo">
+                    <p>暂无仓库</p>
+                    <p>点击下方按钮添加仓库</p>
+                  </div>
+                ) : (
+                  repositories.map(repo => (
+                    <div
+                      key={repo.id}
+                      className={`repo-item ${selectedRepo?.id === repo.id ? 'selected' : ''}`}
+                      onClick={() => handleSelectRepo(repo)}
+                    >
+                      <div className="repo-item-header">
+                        <span className="repo-item-name">{repo.name}</span>
+                        <span className="repo-item-layer">{repo.layer}</span>
+                      </div>
+                      <div className="repo-item-meta">
+                        {repo.path} • {repo.branch}
+                      </div>
+                      <div className="repo-item-actions">
+                        <button
+                          className="repo-action-btn"
+                          onClick={(e) => { e.stopPropagation(); handleParseRepo(repo); }}
+                          disabled={parsingId === repo.id}
+                        >
+                          {parsingId === repo.id ? '解析中...' : '解析代码'}
+                        </button>
+                        <button
+                          className="repo-action-btn danger"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteRepo(repo.id); }}
+                        >
+                          删除
+                        </button>
+                      </div>
+                      {repo.parsed && <div className="parse-status done">已解析</div>}
+                      {parsingId === repo.id && <div className="parse-status parsing">正在解析...</div>}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {showAddForm ? (
+                <div className="repo-form">
+                  <h4>添加新仓库</h4>
+                  <div className="form-row">
+                    <label>仓库名称</label>
+                    <input
+                      type="text"
+                      placeholder="例如: MySDK"
+                      value={newRepo.name}
+                      onChange={(e) => setNewRepo({...newRepo, name: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-row">
+                    <label>本地路径 {loadingGitInfo && <span style={{color:'#2196F3'}}>⟳</span>}</label>
+                    <div style={{display:'flex',gap:'4px'}}>
+                      <input
+                        type="text"
+                        placeholder="例如: /path/to/project"
+                        value={newRepo.path}
+                        onChange={(e) => setNewRepo({...newRepo, path: e.target.value})}
+                        style={{flex:1}}
+                      />
+                      <label style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:'36px',height:'36px',border:'1px solid #ddd',borderRadius:'4px',background:'white',cursor:'pointer',fontSize:'16px'}}>
+                        <input
+                          type="file"
+                          webkitdirectory
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const dir = file.webkitRelativePath?.split('/')[0] || file.name;
+                              const filePath = file.path || dir;
+                              setNewRepo(prev => ({...prev, path: filePath, name: prev.name || dir}));
+                            }
+                          }}
+                          style={{display:'none'}}
+                        />
+                        📁
+                      </label>
+                      <label style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:'36px',height:'36px',border:'1px solid #ddd',borderRadius:'4px',background:'white',cursor:'pointer',fontSize:'16px'}}>
+                        <input
+                          type="file"
+                          accept=".sln"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const filePath = file.path || file.name;
+                              const dir = filePath.replace(/[/\\][^/\\]*$/, '');
+                              const fileName = file.name.replace(/\.sln$/, '');
+                              setNewRepo(prev => ({...prev, path: dir || newRepo.path, name: prev.name || fileName}));
+                            }
+                          }}
+                          style={{display:'none'}}
+                        />
+                        📄
+                      </label>
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <label>分层</label>
+                    <select value={newRepo.layer} onChange={(e) => setNewRepo({...newRepo, layer: e.target.value})}>
+                      <option value="APP">APP</option>
+                      <option value="SDK">SDK</option>
+                      <option value="Framework">Framework</option>
+                    </select>
+                  </div>
+                  <div className="form-row">
+                    <label>分支 {loadingGitInfo && <span style={{color:'#2196F3'}}>⟳</span>}</label>
+                    {availableBranches.length > 0 ? (
+                      <select value={newRepo.branch} onChange={(e) => setNewRepo({...newRepo, branch: e.target.value})}>
+                        {availableBranches.map(b => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="例如: main"
+                        value={newRepo.branch}
+                        onChange={(e) => setNewRepo({...newRepo, branch: e.target.value})}
+                      />
+                    )}
+                  </div>
+                  <div className="form-actions">
+                    <button className="btn-secondary" onClick={() => setShowAddForm(false)}>取消</button>
+                    <button className="btn-primary" onClick={handleAddRepo}>添加</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: '12px', borderTop: '1px solid #eee' }}>
+                  <button className="btn-primary" style={{ width: '100%' }} onClick={() => setShowAddForm(true)}>
+                    + 添加仓库
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <ClassTreePanel
+            selectedSymbol={selectedSymbol}
+            onSymbolSelect={handleSymbolSelect}
+            repositoryId={selectedRepo?.id}
+          />
+          <CallTreePanel symbol={selectedSymbol} />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

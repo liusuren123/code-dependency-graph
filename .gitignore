@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.egg
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Logs
+*.log
+logs/
+
+# Data
+data/
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+~$*
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build
+build/
+dist/
+*.zip
+*.tar.gz
+
+# Test/Debug
+testproject/
+test_*.py
+debug_*.py
+*.tmp
+
+# Node (frontend if built)
+frontend/node_modules/
+frontend/dist/
+
+# Temporary files
+*.bak
+*.cache

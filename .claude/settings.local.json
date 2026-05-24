@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m venv .venv)",
+      "Bash(.venv/Scripts/pip install *)",
+      "Bash(../.venv/Scripts/python -c \"from parser import MultiLayerCodeParser; from database import Database; print\\('import ok'\\)\")",
+      "Bash(../.venv/Scripts/python main.py)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_console_messages",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_screenshot",
+      "Bash(curl -s http://localhost:8000/api/health)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_snapshot",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__click",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__type_text",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__handle_dialog",
+      "Bash(curl -s http://localhost:8000/api/symbols?keyword=executeWorkflow)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm build *)",
+      "Bash(mmx auth *)",
+      "Bash(mmx quota *)",
+      "Bash(rm -f dashboard_refresh_calltree.png cross_repo_calltree.png recursive_calltree.png screenshot-reloaded.png screenshot-with-data.png screenshot-symbol-selected.png screenshot-errors-tab.png screenshot-light-theme.png screenshot-repo-manager.png screenshot-sidebar.png screenshot-sidebar-crop.png screenshot-sidebar2.png screenshot-sidebar3.png screenshot-expanded.png screenshot-search-tab.png screenshot-search-results.png screenshot-sidebar-full.png screenshot-v2-expanded.png screenshot-v4-expanded.png screenshot.png screenshot-v4-search.png screenshot-left.png screenshot-v2.png screenshot-v3.png screenshot-v4.png sidebar-closeup.png sidebar-new.png sidebar-resized.png sidebar-zoomed.png sidebar-close.png left-panel.png left-v2.png sidebar-v2.png panel2.png screenshot-after-fixes.png left-panel-zoomed.png left-panel-detail.png left-panel-final.png screenshot-current.png screenshot-640.png screenshot-dark-theme.png screenshot-light-final.png screenshot-light-expanded.png screenshot-light-full.png screenshot-dark-full.png screenshot-dark-expanded.png screenshot-members-working.png screenshot-calltree-styled.png screenshot-analysis-impact.png screenshot-dataflow.png screenshot-calltree-indent.png screenshot-indent-fixed.png)",
+      "Bash(python main.py)",
+      "Bash(curl -s -X POST http://localhost:8000/api/repositories -H \"Content-Type: application/json\" -d \"{\\\\\"name\\\\\":\\\\\"llama.cpp\\\\\",\\\\\"path\\\\\":\\\\\"E:/GitRepo/llama.cpp\\\\\",\\\\\"layer\\\\\":\\\\\"SDK\\\\\"}\")"
+    ]
+  }
+}

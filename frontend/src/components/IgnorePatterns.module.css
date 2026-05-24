@@ -1,0 +1,94 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  max-height: 120px;
+  overflow-y: auto;
+  padding: var(--space-xs);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.tagRemove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  transition: color var(--transition-fast);
+}
+
+.tagRemove:hover {
+  color: var(--accent-red);
+}
+
+.inputRow {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.input {
+  flex: 1;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--accent);
+}
+
+.addBtn {
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.addBtn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.resetBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+}
+
+.resetBtn:hover {
+  color: var(--text-secondary);
+}
